@@ -1,52 +1,37 @@
 package main
 
 import (
-	"fmt"
+	"sync/atomic"
 	"testing"
 )
 
-
-func TestMutex(t *testing.T) {
+func TestMainLogic(t *testing.T) {
+	var count int32
 	m := Mutex{
-		Count:  5,
-		signal: make(chan struct{}, 5),
+		Count:  500,
+		signal: make(chan struct{}, 500),
 	}
 
-	completed := 0
-	const goroutines = 5
+	done := make(chan struct{}) // Канал для уведомления о завершении всех горутин
 
-	for i := 0; i < goroutines; i++ {
-		go func() {
+	for i := 0; i < 500; i++ {
+		go func(localI int) {
 			defer m.Unlock()
-			completed++
-		}()
+			atomic.AddInt32(&count, 1)
+			if atomic.LoadInt32(&count) == m.Count {
+				close(done) // Закрываем канал, когда все горутины завершены
+			}
+		}(i)
 	}
 
 	m.Wait()
 
-	if completed != goroutines {
-		t.Errorf("Ожидалось %d завершённых горутин, но получили %d", goroutines, completed)
-	}
-}
-
-
-func BenchmarkMutex(b *testing.B) {
-	for n := 1; n <= 3; n++ { 
-		b.Run(fmt.Sprintf("goroutines=%d", n), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				m := Mutex{
-					Count:  n,
-					signal: make(chan struct{}, n),
-				}
-
-				for j := 0; j < n; j++ {
-					go func() {
-						defer m.Unlock()
-					}()
-				}
-
-				m.Wait()
-			}
-		})
+	select {
+	case <-done:
+		if atomic.LoadInt32(&count) != m.Count {
+			t.Errorf("Expected %d goroutines to complete, but got %d", m.Count, count)
+		}
+	default:
+		t.Error("Test failed: not all goroutines completed")
 	}
 }

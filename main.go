@@ -1,9 +1,12 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"sync/atomic"
+)
 
 type Mutex struct {
-	Count  int
+	Count  int32
 	signal chan struct{}
 }
 
@@ -12,23 +15,32 @@ func (m *Mutex) Unlock() {
 }
 
 func (m *Mutex) Wait() {
-	for i := 0; i < m.Count; i++ {
+	for i := int32(0); i < m.Count; i++ {
 		<-m.signal
 	}
 }
 
 func main() {
+	var count int32
 	m := Mutex{
-		Count:  3,
-		signal: make(chan struct{}, 3),
+		Count:  500,
+		signal: make(chan struct{}, 500),
 	}
 
-	for i := 0; i < 3; i++ {
-		go func(i int) {
+	for i := 0; i < 500; i++ {
+		go func(localI int) {
 			defer m.Unlock()
-			fmt.Printf("Горутина %d: Привет, мир!\n", i)
+			fmt.Printf("Горутина %d: Привет, мир!\n", localI)
+			atomic.AddInt32(&count, 1)
 		}(i)
 	}
+
 	m.Wait()
-	fmt.Println("Все горутины завершены.")
+
+	if atomic.LoadInt32(&count) == m.Count {
+		fmt.Println("Все горутины успешно завершены!")
+	} else {
+		fmt.Printf("Некоторые горутины не завершились: завершено %d из %d\n", count, m.Count)
+	}
 }
+
